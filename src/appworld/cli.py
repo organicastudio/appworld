@@ -8,8 +8,9 @@ import sys
 from collections import defaultdict
 from enum import Enum
 from io import StringIO
+from pathlib import Path
 from textwrap import dedent, indent
-from typing import Optional
+from typing import List, Optional, Sequence
 
 import typer
 from click import Context
@@ -47,6 +48,7 @@ class OrderCommands(TyperGroup):
             "run",
             "evaluate",
             "serve",
+            "organize",
             "pack",
             "unpack",
             "make",
@@ -965,6 +967,81 @@ def allowed_runner_types():
                         relative_path = os.path.relpath(root, path_store.experiment_code)
                         runner_types.append(relative_path.replace(os.sep, "."))
     return runner_types
+
+
+@app.command()
+def organize(
+    base: Path = typer.Argument(
+        Path("."), help="Base directory where the organic structure should be created."
+    ),
+    library: List[str] = typer.Option(
+        ["core", "integrations", "compliance"],
+        "--library",
+        "-l",
+        help="Names of mirrored software-chain libraries to scaffold.",
+    ),
+    fast_api: bool = typer.Option(
+        True,
+        "--fast-api/--no-fast-api",
+        help="Whether to include FastAPI workflow scaffolding.",
+    ),
+    nft: bool = typer.Option(
+        True,
+        "--nft/--no-nft",
+        help="Whether to include NFT / digital asset organization folders.",
+    ),
+    apply: bool = typer.Option(
+        False,
+        "--apply",
+        help="Create the folders/files instead of only showing a dry-run preview.",
+    ),
+) -> None:
+    """[Development] Preview or create an organic folder organization."""
+
+    from appworld.common.organization import apply_plan, build_organization_plan, render_plan_tree
+
+    plan = build_organization_plan(
+        base=base,
+        library_names=library,
+        include_fast_api=fast_api,
+        include_nft=nft,
+    )
+    console = Console()
+    console.print(render_plan_tree(plan))
+
+    result = apply_plan(plan, dry_run=not apply)
+    base_path = plan.base_path
+
+    def _format(paths: Sequence[Path]) -> str:
+        if not paths:
+            return "- none"
+        lines = []
+        for path in paths:
+            try:
+                relative = path.relative_to(base_path)
+            except ValueError:
+                relative = path
+            lines.append(f"- {relative}")
+        return "\n".join(lines)
+
+    if apply:
+        summary_lines = [
+            "[green]Created directories:[/]\n" + _format(result.created_dirs),
+            "[green]Created files:[/]\n" + _format(result.created_files),
+        ]
+        if result.existing_dirs:
+            summary_lines.append("[yellow]Existing directories:[/]\n" + _format(result.existing_dirs))
+        if result.existing_files:
+            summary_lines.append("[yellow]Existing files:[/]\n" + _format(result.existing_files))
+        title = "Organization Applied"
+    else:
+        summary_lines = [
+            "[cyan]Planned directories:[/]\n" + _format(result.planned_dirs),
+            "[cyan]Planned files:[/]\n" + _format(result.planned_files),
+        ]
+        title = "Dry Run — pass --apply to create"
+
+    console.print(Panel("\n\n".join(summary_lines), title=title))
 
 
 @app.command()
